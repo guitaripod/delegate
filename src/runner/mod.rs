@@ -6,6 +6,7 @@ use anyhow::{Result, bail};
 
 use crate::config::{ChainEntry, Config};
 
+pub mod claude;
 pub mod command;
 pub mod omp;
 
@@ -35,6 +36,9 @@ pub trait Runner {
 pub fn for_entry(cfg: &Config, entry: &ChainEntry) -> Result<Box<dyn Runner>> {
     match entry.runner.as_str() {
         "omp" => Ok(Box::new(omp::OmpRunner::new(cfg.runners.omp.clone()))),
+        "claude" => Ok(Box::new(claude::ClaudeRunner::new(
+            cfg.runners.claude.clone(),
+        ))),
         "command" => Ok(Box::new(command::CommandRunner)),
         other => bail!("unknown runner '{other}'"),
     }

@@ -137,6 +137,34 @@ pub struct ModePolicy {
 pub struct RunnersConfig {
     #[serde(default)]
     pub omp: OmpRunnerConfig,
+    #[serde(default)]
+    pub claude: ClaudeRunnerConfig,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct ClaudeRunnerConfig {
+    #[serde(default = "default_claude_bin")]
+    pub bin: String,
+    #[serde(default = "default_claude_args")]
+    pub args: Vec<String>,
+}
+
+impl Default for ClaudeRunnerConfig {
+    fn default() -> Self {
+        ClaudeRunnerConfig {
+            bin: default_claude_bin(),
+            args: default_claude_args(),
+        }
+    }
+}
+
+fn default_claude_bin() -> String {
+    "claude".to_string()
+}
+
+fn default_claude_args() -> Vec<String> {
+    vec!["--strict-mcp-config".to_string()]
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -421,8 +449,9 @@ impl Config {
                             );
                         }
                     }
+                    "claude" => {}
                     other => bail!(
-                        "tier '{name}' chain[{i}] has unknown runner '{other}' (omp, command)"
+                        "tier '{name}' chain[{i}] has unknown runner '{other}' (omp, claude, command)"
                     ),
                 }
             }

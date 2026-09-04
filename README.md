@@ -112,7 +112,7 @@ Every key, one line each:
 - `tiers` — map of tier name → `{label, chain}`. Required; must have exactly the same keys as `order`.
 - `classes` — map of class name → class policy, default `{}`. A `default` entry backstops any class without its own.
 - `modes` — `{conserve, rush}` policies, default shift `-1`/`+1` with no cap or approval gate.
-- `runners.omp` — defaults for the omp runner (below).
+- `runners.omp`, `runners.claude` — defaults for the omp and Claude Code runners (below).
 - `server` — HTTP daemon settings (below).
 - `packets_dir` — string, default `.delegate/packets`. Where `delegate new` writes packets, relative to the repo root.
 - `data_dir` — path, default none (falls back to `$XDG_DATA_HOME/delegate` or `~/.local/share/delegate`). Holds `delegate.db`.
@@ -124,9 +124,9 @@ Every key, one line each:
 - `chain` — chain entries, required, non-empty. Tried in order; the first with no `health` or a 2xx `health` is used for the whole tier.
 
 **`tiers.<name>.chain[]`**
-- `runner` — `omp`\|`command`, default `omp`.
-- `model` — string, required for `omp`. Passed as `--model`.
-- `thinking` — string, default none. Passed as `--thinking`; a packet's `effort` overrides it.
+- `runner` — `omp`\|`claude`\|`command`, default `omp`. `omp` runs oh-my-pi headless, `claude` runs Claude Code headless (`claude -p --output-format stream-json --dangerously-skip-permissions`, on whatever login Claude Code has), `command` runs a shell command with the prompt on stdin.
+- `model` — string, required for `omp`, optional for `claude`. Passed as `--model`.
+- `thinking` — string, default none. Passed as `--thinking` (omp) or `--effort` (claude); a packet's `effort` overrides it.
 - `health` — URL, default none. GET must answer 2xx for this entry to be eligible; entries without `health` are always eligible.
 - `settings` — arbitrary YAML, default none. Written to a temp file and passed to omp as `--config` (an overlay on omp's own config).
 - `command` — shell string, required for `command`. Runs via `sh -c`; the prompt arrives on stdin.
@@ -155,6 +155,10 @@ Every key, one line each:
 - `no_extensions` — bool, default `false`. Passes `--no-extensions`.
 - `no_skills` — bool, default `false`. Passes `--no-skills`.
 - `no_rules` — bool, default `false`. Passes `--no-rules`.
+
+**`runners.claude`**
+- `bin` — string, default `claude`, resolved like `runners.omp.bin`.
+- `args` — list, default `[--strict-mcp-config]` so workers start without MCP servers. Extra args are appended to every Claude Code invocation, after the chain entry's own.
 
 **`server`**
 - `listen` — string, default `0.0.0.0:4100`. Overridable with `serve --listen`.
