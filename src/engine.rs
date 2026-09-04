@@ -481,11 +481,15 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
         }
     } else if worker_timed_out {
         AttemptStatus::Timeout
-    } else if worker_exit == Some(0) {
+    } else if worker_exit == Some(0) && !changed.is_empty() {
         AttemptStatus::Pass
     } else {
         AttemptStatus::Fail
     };
+    let no_changes = status == AttemptStatus::Fail && worker_exit == Some(0) && changed.is_empty();
+    if no_changes {
+        verify_tail = format!("worker exited 0 but changed no files\n{log_tail}");
+    }
     if status != AttemptStatus::Pass && verify_tail.is_empty() {
         verify_tail = if worker_timed_out || verify_timed_out {
             format!("timed out after {}s\n{}", timeout.as_secs(), log_tail)

@@ -275,7 +275,8 @@ Each tier is a chain of entries. Entries with a `health` URL are skipped when it
 tried, and if the worker never gets going (bad credentials, no credits, unknown model, runner error: non-zero exit with no
 output tokens and no changed files) the run moves to the next entry in the same tier without consuming an attempt. Such
 attempts are stored with status `error` and excluded from `delegate stats`. Only a real failure (verifier or scope) counts
-against `attempts` and escalates to the next tier.
+against `attempts` and escalates to the next tier. A packet with no `verify` passes only when the worker exits 0 and
+changed at least one file; a clean exit with no changes is a failure, so a model that just talks cannot pass.
 
 ## Integrations
 
