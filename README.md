@@ -160,7 +160,7 @@ Every key, one line each:
 - `listen` — string, default `0.0.0.0:4100`. Overridable with `serve --listen`.
 - `user` — string, default `delegate`. HTTP Basic auth username.
 - `password_env` — string, default `DELEGATE_PASSWORD`. Environment variable read for the Basic auth password.
-- `env_file` — path or none, default `~/.config/delegate/serve.env`. `KEY=VALUE` fallback read when the env var is unset; `install-service` creates it with a random password if missing.
+- `env_file` — path or none, default `~/.config/delegate/serve.env`. `KEY=VALUE` fallback read when the env var is unset; `install-service` creates it with a random password if missing. Every other `KEY=VALUE` in that file (provider API keys, for example) is exported to workers and verifiers, so the daemon can reach cloud tiers without a login shell.
 
 **Deep-merge gotcha:** merging is key-wise on mappings only. A sequence — most importantly a
 tier's `chain` — is *replaced wholesale* by whichever layer last mentions it, never

@@ -175,8 +175,11 @@ fn select_entry<'a>(
     Err(reasons.join("; "))
 }
 
-fn worker_env(plan: &Plan, repo: &Path) -> BTreeMap<String, String> {
+fn worker_env(cfg: &Config, plan: &Plan, repo: &Path) -> BTreeMap<String, String> {
     let mut env = plan.env.clone();
+    for (k, v) in cfg.env_file_entries() {
+        env.entry(k).or_insert(v);
+    }
     if repo.join("Cargo.toml").exists() && !env.contains_key("CARGO_TARGET_DIR") {
         env.insert(
             "CARGO_TARGET_DIR".to_string(),
@@ -198,7 +201,7 @@ fn run_ladder(
     approver: &mut dyn Approver,
     cancel: &AtomicBool,
 ) -> Result<LadderOutcome> {
-    let env = worker_env(plan, repo);
+    let env = worker_env(cfg, plan, repo);
     let timeout = Duration::from_secs(plan.timeout_secs);
     let mut previous: Option<Failure> = None;
     let mut escalations = 0u32;

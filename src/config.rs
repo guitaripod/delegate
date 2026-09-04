@@ -264,6 +264,26 @@ fn default_rush() -> ModePolicy {
     }
 }
 
+/// KEY=VALUE lines; later entries win, `export` prefixes and quotes are tolerated.
+pub fn read_env_file(path: &std::path::Path) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return map;
+    };
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        if let Some((k, v)) = line.split_once('=') {
+            let v = v.trim().trim_matches('"').trim_matches('\'');
+            map.insert(k.trim().to_string(), v.to_string());
+        }
+    }
+    map
+}
+
 pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -545,6 +565,16 @@ impl Config {
             env,
             scope_ignore,
         })
+    }
+
+    /// Extra environment for workers from the server env file (provider keys), minus the daemon password itself.
+    pub fn env_file_entries(&self) -> BTreeMap<String, String> {
+        let Some(file) = &self.server.env_file else {
+            return BTreeMap::new();
+        };
+        let mut map = read_env_file(&expand_home(file));
+        map.remove(&self.server.password_env);
+        map
     }
 
     pub fn packets_dir(&self, repo: &Path) -> PathBuf {

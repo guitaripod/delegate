@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -107,26 +107,6 @@ fn internal(e: impl std::fmt::Display) -> ApiError {
     ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
-/// KEY=VALUE lines; later entries win, `export` prefixes and quotes are tolerated.
-pub fn read_env_file(path: &std::path::Path) -> BTreeMap<String, String> {
-    let mut map = BTreeMap::new();
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return map;
-    };
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        if let Some((k, v)) = line.split_once('=') {
-            let v = v.trim().trim_matches('"').trim_matches('\'');
-            map.insert(k.trim().to_string(), v.to_string());
-        }
-    }
-    map
-}
-
 pub fn password(cfg: &Config) -> Result<String> {
     if let Ok(v) = std::env::var(&cfg.server.password_env)
         && !v.is_empty()
@@ -134,7 +114,7 @@ pub fn password(cfg: &Config) -> Result<String> {
         return Ok(v);
     }
     if let Some(file) = &cfg.server.env_file {
-        let map = read_env_file(&crate::config::expand_home(file));
+        let map = crate::config::read_env_file(&crate::config::expand_home(file));
         if let Some(v) = map.get(&cfg.server.password_env)
             && !v.is_empty()
         {
