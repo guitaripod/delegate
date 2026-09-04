@@ -498,11 +498,7 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
         };
     }
     let provider_failed = status != AttemptStatus::Pass
-        && (!worker_ok
-            || (worker_exit != Some(0)
-                && !worker_timed_out
-                && tokens_out == 0
-                && changed.is_empty()));
+        && (!worker_ok || (!worker_timed_out && tokens_out == 0 && changed.is_empty()));
     let status = if provider_failed {
         AttemptStatus::Error
     } else {
@@ -585,12 +581,27 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
 
 /// Last meaningful line the failed worker printed, short enough for one event line.
 fn failure_reason(worker_summary: &str, log_tail: &str) -> String {
-    let line = [worker_summary, log_tail]
+    let candidates: Vec<&str> = [worker_summary, log_tail]
         .iter()
         .flat_map(|text| text.lines().rev())
         .map(str::trim)
-        .find(|l| !l.is_empty() && !l.starts_with("Working"))
+        .filter(|l| !l.is_empty() && !is_noise_line(l))
+        .collect();
+    let line = candidates
+        .iter()
+        .find(|l| l.to_ascii_lowercase().contains("error"))
+        .or_else(|| candidates.first())
+        .copied()
         .unwrap_or("no output");
-    let shortened: String = line.chars().take(160).collect();
-    shortened
+    line.chars().take(160).collect()
+}
+
+/// Stack frames, source dumps and spinner text never explain a failure.
+fn is_noise_line(line: &str) -> bool {
+    line.starts_with("Working")
+        || line.starts_with("at ")
+        || line.starts_with('^')
+        || line
+            .split_once(" | ")
+            .is_some_and(|(n, _)| n.trim().parse::<u64>().is_ok())
 }
