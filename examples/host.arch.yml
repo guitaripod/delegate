@@ -1,0 +1,18 @@
+# Host overlay for the Arch desktop — the GPU box itself. Goes in
+# ~/.config/delegate/host.yml on that machine (not committed; it's
+# deep-merged over config.yml).
+#
+# This box serves the local model directly, so t1 only needs one entry:
+# the local llama-swap endpoint, no tailnet hop, no fallback.
+#
+# Remember the merge is wholesale on sequences: this replaces t1's entire
+# chain, it does not add to whatever config.yml already had there.
+tiers:
+  t1:
+    chain:
+      - runner: omp
+        model: llama-swap/qwen38-nvfp4
+        thinking: low
+        health: http://127.0.0.1:8081/v1/models
+        settings:
+          temperature: 0

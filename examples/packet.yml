@@ -1,0 +1,70 @@
+# One delegated unit of work. `delegate new` writes a file like this one;
+# `delegate schema` prints the full JSON Schema. Fields left out entirely
+# behave the same as if they were absent here.
+
+# ULID, normally assigned by `delegate new`. Must be non-blank.
+id: 01J8X4R8N0V3Z9Q2K7T6M1P5W2
+
+# Selects defaults (tier, ceiling, verify, attempts, timeout, env,
+# scope_ignore) from `classes.rust-impl` in config, falling back to
+# `classes.default` if that class doesn't exist.
+class: rust-impl
+
+# What the worker must achieve. Write it for a reader with no other
+# context — this is the entire brief the worker model sees, plus whatever
+# `notes` and `read` add below.
+goal: |
+  Add a `total_secs()` method on the `Segments` type in src/timing.rs that
+  sums the duration of every segment. Include a unit test covering an empty
+  list (0) and a list of three segments.
+
+# Allowed paths/globs. Empty (or omitted) means unrestricted. Enforced
+# after the run by diffing the worktree, not by sandboxing the worker.
+paths:
+  - src/timing.rs
+
+# Shell command run in the isolated worktree once the worker finishes;
+# exit 0 passes. Overrides the class's own `verify` for this packet only.
+# Quoted because it contains a `::` — YAML reads an unquoted colon as a
+# mapping separator, so quote any verify/goal/notes string that has one.
+verify: "cargo build && cargo test timing::"
+
+# Files the worker should read before starting. Delegate does not read
+# these itself — they just get listed in the prompt.
+read:
+  - src/timing.rs
+  - src/lib.rs
+
+# Free-form context appended to the prompt. Use it for anything the goal
+# line would make too long, or context that isn't itself an instruction.
+notes: |
+  Segments are stored as std::time::Duration already; you don't need to
+  parse anything, just sum and format.
+
+# Overrides the class's start tier / ceiling. Leave both unset to use
+# whatever classes.rust-impl.tier / .ceiling resolve to.
+# tier: t1
+# ceiling: t3
+
+# Reasoning effort passed to the worker model, overriding the chain
+# entry's own `thinking` level for this run.
+# effort: medium
+
+# Seconds allowed per attempt, for the worker and the verify command each.
+# Falls back to the class, then 900.
+# timeout: 1200
+
+# Attempts at a tier before escalating to the next. Falls back to the
+# class, then 2.
+# attempts: 2
+
+# Dispatch mode override (normal/conserve/rush). Falls back to the
+# class-independent config.mode.
+# mode: conserve
+
+# Repository this packet applies to. Defaults to the current directory
+# when the packet is run; must be a git repo with at least one commit.
+# repo: /home/marcus/Dev/rust/delegate
+
+# RFC 3339 creation time, set once by `delegate new`.
+created: 2026-09-04T12:00:00+00:00

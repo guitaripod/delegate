@@ -1,0 +1,25 @@
+# Host overlay for the laptop — no local GPU of its own. Goes in
+# ~/.config/delegate/host.yml on that machine (not committed; it's
+# deep-merged over config.yml).
+#
+# t1 tries the GPU box over the tailnet first, then a local ollama model as
+# a fallback if the tailnet is down. If neither answers its health check,
+# t1 is skipped for the run and delegate escalates to t2 (already cloud in
+# config.yml) — that's "then cloud": it falls out of the normal ladder, not
+# a third entry bolted onto this chain.
+#
+# Remember the merge is wholesale on sequences: this replaces t1's entire
+# chain, it does not add to whatever config.yml already had there.
+tiers:
+  t1:
+    chain:
+      - runner: omp
+        model: arch-tailnet/qwen38-nvfp4
+        thinking: low
+        health: http://100.91.211.44:8081/v1/models
+        settings:
+          temperature: 0
+      - runner: omp
+        model: ollama/qwen3.8:27b-mlx
+        thinking: low
+        health: http://127.0.0.1:11434/v1/models

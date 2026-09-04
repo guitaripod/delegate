@@ -1,0 +1,140 @@
+# Complete three-tier example. Copy to ~/.config/delegate/config.yml and adjust,
+# or pass with --config as a starting point for a repo-local overlay.
+#
+# Layering: this file, then ~/.config/delegate/host.yml (per-machine, not
+# committed — see host.arch.yml / host.mac.yml), then $DELEGATE_CONFIG
+# (colon-separated paths), then repeated --config flags. Later layers
+# deep-merge over earlier ones; sequences (a tier's chain, most importantly)
+# are replaced wholesale by whichever layer last mentions them, never
+# concatenated — see the host.*.yml examples.
+
+# Default dispatch mode when neither a packet nor the caller overrides it.
+mode: normal
+
+# Tier names, cheapest to strongest. This is the ladder delegate walks;
+# "start" and "ceiling" below are just names from this list.
+order: [t1, t2, t3]
+
+tiers:
+  t1:
+    label: local
+    # Chain entries are tried in order; the first with no `health` or a 2xx
+    # `health` wins the tier for this attempt.
+    chain:
+      - runner: omp
+        model: llama-swap/qwen38-nvfp4
+        thinking: low
+        health: http://127.0.0.1:8081/v1/models
+        # Arbitrary YAML, written to a temp file and passed to omp as --config
+        # (an overlay on top of omp's own configuration).
+        settings:
+          temperature: 0
+  t2:
+    label: cheap cloud
+    chain:
+      - runner: omp
+        model: kimi-code/k3
+        thinking: medium
+  t3:
+    label: frontier
+    chain:
+      - runner: omp
+        model: anthropic/claude-opus-5
+        thinking: high
+        # Extra environment merged over the plan's environment, for just this entry.
+        env:
+          ANTHROPIC_LOG: warn
+
+classes:
+  # Backstops any class name below with no entry of its own.
+  default:
+    tier: t2
+    ceiling: t3
+
+  rust-impl:
+    tier: t1
+    ceiling: t3
+    verify: cargo build && cargo clippy --all-targets -- -D warnings && cargo test
+    attempts: 2
+    timeout: 1200
+    env:
+      CARGO_TERM_COLOR: never
+    # On top of the top-level scope_ignore below, for this class only.
+    scope_ignore: [Cargo.lock]
+
+  rust-mech:
+    tier: t1
+    ceiling: t2
+    verify: cargo build && cargo test
+
+  swift-impl:
+    tier: t2
+    ceiling: t3
+
+  strings:
+    tier: t1
+    ceiling: t2
+
+  docs:
+    tier: t1
+    ceiling: t2
+    # No verify command exists for prose; say so explicitly rather than rely
+    # on `verified` defaulting from verify.is_some().
+    verified: false
+
+  review:
+    tier: t3
+    ceiling: t3
+    verified: false
+
+modes:
+  conserve:
+    # Rungs subtracted from the resolved start tier, clamped to [0, ceiling].
+    shift: -1
+    # Caps (never raises) the ceiling for classes that resolve as verified.
+    ceiling_verified: t2
+    # Pause for approval before entering t3, if escalation would reach it.
+    ask_before: t3
+  rush:
+    shift: 1
+
+runners:
+  omp:
+    bin: omp
+    args: []
+    no_lsp: true
+    no_extensions: false
+    no_skills: false
+    no_rules: false
+
+server:
+  listen: 0.0.0.0:4100
+  user: delegate
+  password_env: DELEGATE_PASSWORD
+  env_file: ~/.config/delegate/serve.env
+
+# Where `delegate new` writes packets, relative to the repo root.
+packets_dir: .delegate/packets
+
+# Where delegate.db lives. Omit to use $XDG_DATA_HOME/delegate or
+# ~/.local/share/delegate.
+data_dir: ~/.local/share/delegate
+
+# Timeout for each chain entry's health probe.
+health_timeout_ms: 3000
+
+# Files exempt from the `paths` check at any depth (lockfiles a verify
+# command rewrites); they still ship in the patch. Class policies can add
+# more on top of this list.
+scope_ignore:
+  - Cargo.lock
+  - package-lock.json
+  - bun.lock
+  - bun.lockb
+  - yarn.lock
+  - pnpm-lock.yaml
+  - Package.resolved
+  - poetry.lock
+  - uv.lock
+  - Gemfile.lock
+  - go.sum
