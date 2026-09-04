@@ -156,21 +156,22 @@ struct LadderOutcome {
     summary: String,
 }
 
-fn select_entry<'a>(
-    cfg: &'a Config,
-    entries: &'a [ChainEntry],
-) -> Result<(usize, &'a ChainEntry), String> {
+/// Index of the first chain entry at or after `from` whose health URL answers, or every reason why none did.
+fn first_healthy(cfg: &Config, entries: &[ChainEntry], from: usize) -> Result<usize, String> {
     let mut reasons = Vec::new();
-    for (i, entry) in entries.iter().enumerate() {
+    for (i, entry) in entries.iter().enumerate().skip(from) {
         match &entry.health {
-            None => return Ok((i, entry)),
+            None => return Ok(i),
             Some(url) => match crate::health::check(url, cfg.health_timeout_ms) {
-                Ok(()) => return Ok((i, entry)),
+                Ok(()) => return Ok(i),
                 Err(reason) => {
                     reasons.push(format!("{} unreachable ({reason})", entry.display_model()))
                 }
             },
         }
+    }
+    if reasons.is_empty() {
+        reasons.push("no chain entries left".to_string());
     }
     Err(reasons.join("; "))
 }
@@ -247,8 +248,8 @@ fn run_ladder(
                 });
             }
         }
-        let (chain_index, entry) = match select_entry(cfg, &tier.chain) {
-            Ok(found) => found,
+        let mut chain_index = match first_healthy(cfg, &tier.chain, 0) {
+            Ok(index) => index,
             Err(reason) => {
                 emitter.emit(RunEvent::TierSkipped {
                     tier: tier_name.to_string(),
@@ -259,23 +260,29 @@ fn run_ladder(
                 continue;
             }
         };
-        emitter.emit(RunEvent::TierSelected {
-            tier: tier_name.to_string(),
-            label: tier.label.clone().unwrap_or_default(),
-            runner: entry.runner.clone(),
-            model: entry.display_model(),
-            chain_index,
-        });
-        let runner = runner::for_entry(cfg, entry)?;
-        let thinking = req
-            .packet
-            .effort
-            .map(|e| e.thinking_level().to_string())
-            .or_else(|| entry.thinking.clone());
-        for attempt in 1..=plan.attempts {
+        let mut announced = None;
+        let mut attempt = 1u32;
+        while attempt <= plan.attempts {
             if cancel.load(Ordering::Relaxed) {
                 return Ok(cancelled(escalations));
             }
+            let entry = &tier.chain[chain_index];
+            if announced != Some(chain_index) {
+                emitter.emit(RunEvent::TierSelected {
+                    tier: tier_name.to_string(),
+                    label: tier.label.clone().unwrap_or_default(),
+                    runner: entry.runner.clone(),
+                    model: entry.display_model(),
+                    chain_index,
+                });
+                announced = Some(chain_index);
+            }
+            let runner = runner::for_entry(cfg, entry)?;
+            let thinking = req
+                .packet
+                .effort
+                .map(|e| e.thinking_level().to_string())
+                .or_else(|| entry.thinking.clone());
             let outcome = run_attempt(AttemptContext {
                 cfg,
                 plan,
@@ -285,7 +292,7 @@ fn run_ladder(
                 entry,
                 chain_index,
                 runner: runner.as_ref(),
-                thinking: thinking.clone(),
+                thinking,
                 attempt,
                 env: &env,
                 timeout,
@@ -301,7 +308,24 @@ fn run_ladder(
                         summary: format!("{} file(s): {}", files.len(), summary),
                     });
                 }
-                AttemptOutcome::Failed(failure) => previous = Some(failure),
+                AttemptOutcome::Failed(failure) => {
+                    previous = Some(failure);
+                    attempt += 1;
+                }
+                AttemptOutcome::ProviderFailed(reason) => {
+                    match first_healthy(cfg, &tier.chain, chain_index + 1) {
+                        Ok(next) => {
+                            emitter.emit(RunEvent::ChainFailover {
+                                tier: tier_name.to_string(),
+                                from: entry.display_model(),
+                                to: tier.chain[next].display_model(),
+                                reason,
+                            });
+                            chain_index = next;
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
         last_tier = Some(tier_name.to_string());
@@ -334,8 +358,13 @@ fn cancelled(escalations: u32) -> LadderOutcome {
 }
 
 enum AttemptOutcome {
-    Passed { files: Vec<String>, summary: String },
+    Passed {
+        files: Vec<String>,
+        summary: String,
+    },
     Failed(Failure),
+    /// The worker never got going (auth, credits, unknown model, runner error): try the next chain entry.
+    ProviderFailed(String),
 }
 
 struct AttemptContext<'a, 'e> {
@@ -464,6 +493,17 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
             log_tail.clone()
         };
     }
+    let provider_failed = status != AttemptStatus::Pass
+        && (!worker_ok
+            || (worker_exit != Some(0)
+                && !worker_timed_out
+                && tokens_out == 0
+                && changed.is_empty()));
+    let status = if provider_failed {
+        AttemptStatus::Error
+    } else {
+        status
+    };
     let duration_ms = started.elapsed().as_millis() as u64;
     emitter.emit(RunEvent::AttemptFinished {
         tier: tier_name.to_string(),
@@ -524,6 +564,12 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
             summary: worker_summary,
         });
     }
+    if provider_failed {
+        return Ok(AttemptOutcome::ProviderFailed(failure_reason(
+            &worker_summary,
+            &verify_tail,
+        )));
+    }
     Ok(AttemptOutcome::Failed(Failure {
         tier: tier_name.to_string(),
         attempt,
@@ -531,4 +577,16 @@ fn run_attempt(ctx: AttemptContext<'_, '_>) -> Result<AttemptOutcome> {
         scope_violations: violations,
         worker_summary,
     }))
+}
+
+/// Last meaningful line the failed worker printed, short enough for one event line.
+fn failure_reason(worker_summary: &str, log_tail: &str) -> String {
+    let line = [worker_summary, log_tail]
+        .iter()
+        .flat_map(|text| text.lines().rev())
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("Working"))
+        .unwrap_or("no output");
+    let shortened: String = line.chars().take(160).collect();
+    shortened
 }

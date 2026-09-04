@@ -325,7 +325,7 @@ impl Store {
         let mut stmt = self.conn.prepare(
             "SELECT r.class, a.tier, COUNT(*), SUM(CASE WHEN a.status = 'pass' THEN 1 ELSE 0 END), AVG(a.duration_ms), SUM(a.tokens_in), SUM(a.tokens_out)
              FROM attempts a JOIN runs r ON r.id = a.run_id
-             WHERE (?1 IS NULL OR r.class = ?1)
+             WHERE (?1 IS NULL OR r.class = ?1) AND a.status != 'error'
              GROUP BY r.class, a.tier ORDER BY r.class, a.tier",
         )?;
         let rows = stmt.query_map(params![class], |r| {

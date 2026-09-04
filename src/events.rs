@@ -106,6 +106,12 @@ pub enum RunEvent {
         to: String,
         reason: String,
     },
+    ChainFailover {
+        tier: String,
+        from: String,
+        to: String,
+        reason: String,
+    },
     Applied {
         files: Vec<String>,
         patch_bytes: usize,
@@ -194,6 +200,12 @@ impl RunEvent {
                 }
             }
             RunEvent::Escalated { from, to, reason } => format!("{from} → {to} ({reason})"),
+            RunEvent::ChainFailover {
+                tier,
+                from,
+                to,
+                reason,
+            } => format!("{tier} ↷ {to} ({from} failed: {reason})"),
             RunEvent::Applied { files, patch_bytes } => {
                 format!("applied {} file(s), {} bytes", files.len(), patch_bytes)
             }

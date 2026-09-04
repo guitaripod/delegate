@@ -269,6 +269,14 @@ log matters more than reproducibility: you don't compare a candidate model's out
 byte-for-byte against a baseline, you compare its pass rate across the golden set via
 `delegate stats`.
 
+## Chain failover
+
+Each tier is a chain of entries. Entries with a `health` URL are skipped when it does not answer. An entry without one is
+tried, and if the worker never gets going (bad credentials, no credits, unknown model, runner error: non-zero exit with no
+output tokens and no changed files) the run moves to the next entry in the same tier without consuming an attempt. Such
+attempts are stored with status `error` and excluded from `delegate stats`. Only a real failure (verifier or scope) counts
+against `attempts` and escalates to the next tier.
+
 ## Integrations
 
 `delegate` itself is just the CLI and daemon above — it has no editor or agent integration
