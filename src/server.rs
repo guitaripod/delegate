@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -19,7 +19,7 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::config::{Config, Overrides};
+use crate::config::{ClassView, Config, ModePolicies, Overrides};
 use crate::engine::{self, Approver, EventSink, RunRequest};
 use crate::events::Envelope;
 use crate::packet::{Mode, Packet};
@@ -181,6 +181,10 @@ struct Capabilities {
     tiers: Vec<String>,
     classes: Vec<String>,
     modes: Vec<&'static str>,
+    /// Per class, what a blank packet field resolves to, so a client can say it before sending.
+    class_policies: BTreeMap<String, ClassView>,
+    /// What conserve and rush do to the ladder.
+    mode_policies: ModePolicies,
 }
 
 async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
@@ -189,11 +193,13 @@ async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
         version: env!("CARGO_PKG_VERSION"),
         host: gethostname::gethostname().to_string_lossy().to_string(),
         features: vec![
-            "runs", "events", "approve", "cancel", "replay", "stats", "tiers",
+            "runs", "events", "approve", "cancel", "replay", "stats", "tiers", "policies",
         ],
         tiers: state.cfg.order.clone(),
         classes: state.cfg.classes.keys().cloned().collect(),
         modes: vec!["normal", "conserve", "rush"],
+        class_policies: state.cfg.class_views(),
+        mode_policies: state.cfg.modes.clone(),
     })
 }
 

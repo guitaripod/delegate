@@ -229,7 +229,7 @@ Basic auth (`server.user` / the resolved password) except `GET /health`.
 | method | path | body | notes |
 |---|---|---|---|
 | GET | `/health` | — | No auth. `{ok, version}`. |
-| GET | `/v1/capabilities` | — | Version, hostname, tier/class/mode names. |
+| GET | `/v1/capabilities` | — | Version, hostname, tier/class/mode names, plus `class_policies` (per class: tier, ceiling, verify, verified, attempts — never `env`) and `mode_policies` (conserve/rush: shift, ceiling_verified, ask_before). |
 | GET | `/v1/tiers` | — | Same shape as `delegate tiers --json`, health probed live. |
 | GET | `/v1/runs?limit=` | — | Recent runs, default 50, max 500. |
 | POST | `/v1/runs` | `{packet, tier?, ceiling?, mode?, attempts?}` | 202 `{run_id}`; runs in the background. |

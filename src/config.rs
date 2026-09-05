@@ -100,6 +100,16 @@ pub struct ClassPolicy {
     pub scope_ignore: Vec<String>,
 }
 
+/// A class policy as a client may read it: everything but the environment.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct ClassView {
+    pub tier: Option<String>,
+    pub ceiling: Option<String>,
+    pub verify: Option<String>,
+    pub verified: Option<bool>,
+    pub attempts: Option<u32>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ModePolicies {
@@ -500,6 +510,27 @@ impl Config {
             .or_else(|| self.classes.get("default"))
     }
 
+    /// What each class decides for a packet that leaves the field blank, as the API tells a
+    /// client: the start, the ceiling, the verifier and the attempt budget. Per-class `env` is
+    /// deliberately not here, because it is where provider keys live.
+    pub fn class_views(&self) -> BTreeMap<String, ClassView> {
+        self.classes
+            .iter()
+            .map(|(name, policy)| {
+                (
+                    name.clone(),
+                    ClassView {
+                        tier: policy.tier.clone(),
+                        ceiling: policy.ceiling.clone(),
+                        verify: policy.verify.clone(),
+                        verified: policy.verified,
+                        attempts: policy.attempts,
+                    },
+                )
+            })
+            .collect()
+    }
+
     pub fn data_dir(&self) -> PathBuf {
         if let Some(dir) = &self.data_dir {
             return expand_home(dir);
@@ -759,6 +790,23 @@ server:
         assert!(plan.verify.is_none());
         assert_eq!(plan.mode, Mode::Normal);
         assert!(plan.ask_before.is_none());
+    }
+
+    #[test]
+    fn class_views_carry_the_table_but_never_the_env() {
+        let yaml = format!(
+            "{THREE_TIERS}classes:\n  rust-impl:\n    tier: t2\n    ceiling: t3\n    verify: cargo test\n    attempts: 3\n    env:\n      OPENAI_API_KEY: secret\n"
+        );
+        let cfg = cfg_from(&yaml);
+        let views = cfg.class_views();
+        let view = views.get("rust-impl").expect("class listed");
+        assert_eq!(view.tier.as_deref(), Some("t2"));
+        assert_eq!(view.ceiling.as_deref(), Some("t3"));
+        assert_eq!(view.verify.as_deref(), Some("cargo test"));
+        assert_eq!(view.attempts, Some(3));
+        let json = serde_json::to_string(&views).expect("serializes");
+        assert!(!json.contains("secret"));
+        assert!(!json.contains("env"));
     }
 
     #[test]
