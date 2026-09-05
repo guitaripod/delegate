@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
 use anyhow::{Context, Result, bail};
-use axum::extract::{Path, Query, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -19,7 +19,7 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::config::{ClassView, Config, ModePolicies, Overrides};
+use crate::config::{AuthMode, ClassView, Config, ModePolicies, Overrides, is_trusted_peer};
 use crate::engine::{self, Approver, EventSink, RunRequest};
 use crate::events::Envelope;
 use crate::packet::{Mode, Packet};
@@ -131,8 +131,16 @@ pub fn password(cfg: &Config) -> Result<String> {
     )
 }
 
-async fn auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
+async fn auth(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> Response {
     if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+    if state.cfg.server.auth == AuthMode::Tailnet && is_trusted_peer(peer.ip()) {
         return next.run(req).await;
     }
     let ok = req
@@ -181,6 +189,8 @@ struct Capabilities {
     tiers: Vec<String>,
     classes: Vec<String>,
     modes: Vec<&'static str>,
+    /// Who gets in without the password: `tailnet` or `password`.
+    auth: &'static str,
     /// Per class, what a blank packet field resolves to, so a client can say it before sending.
     class_policies: BTreeMap<String, ClassView>,
     /// What conserve and rush do to the ladder.
@@ -198,6 +208,7 @@ async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
         tiers: state.cfg.order.clone(),
         classes: state.cfg.classes.keys().cloned().collect(),
         modes: vec!["normal", "conserve", "rush"],
+        auth: state.cfg.server.auth.as_str(),
         class_policies: state.cfg.class_views(),
         mode_policies: state.cfg.modes.clone(),
     })
@@ -589,6 +600,11 @@ pub async fn serve(cfg: Config, listen: Option<String>) -> Result<()> {
         .await
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!("delegate {} listening on {addr}", env!("CARGO_PKG_VERSION"));
-    axum::serve(listener, app).await.context("server error")?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("server error")?;
     Ok(())
 }

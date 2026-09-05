@@ -163,6 +163,7 @@ Every key, one line each:
 **`server`**
 - `listen` — string, default `0.0.0.0:4100`. Overridable with `serve --listen`.
 - `user` — string, default `delegate`. HTTP Basic auth username.
+- `auth` — `tailnet` (default) or `password`. `tailnet` lets a peer on loopback (which is also what `tailscale serve` hands over) or a Tailscale address (100.64.0.0/10, fd7a:115c:a1e0::/48) in without a password, the way the bridges trust the tailnet, and asks everyone else for the Basic auth password; `password` asks everyone. `/v1/capabilities` reports the mode as `auth`.
 - `password_env` — string, default `DELEGATE_PASSWORD`. Environment variable read for the Basic auth password.
 - `env_file` — path or none, default `~/.config/delegate/serve.env`. `KEY=VALUE` fallback read when the env var is unset; `install-service` creates it with a random password if missing. Every other `KEY=VALUE` in that file (provider API keys, for example) is exported to workers and verifiers, so the daemon can reach cloud tiers without a login shell.
 
@@ -229,7 +230,7 @@ Basic auth (`server.user` / the resolved password) except `GET /health`.
 | method | path | body | notes |
 |---|---|---|---|
 | GET | `/health` | — | No auth. `{ok, version}`. |
-| GET | `/v1/capabilities` | — | Version, hostname, tier/class/mode names, plus `class_policies` (per class: tier, ceiling, verify, verified, attempts — never `env`) and `mode_policies` (conserve/rush: shift, ceiling_verified, ask_before). |
+| GET | `/v1/capabilities` | — | Version, hostname, tier/class/mode names, `auth` (`tailnet` or `password`), plus `class_policies` (per class: tier, ceiling, verify, verified, attempts — never `env`) and `mode_policies` (conserve/rush: shift, ceiling_verified, ask_before). |
 | GET | `/v1/tiers` | — | Same shape as `delegate tiers --json`, health probed live. |
 | GET | `/v1/runs?limit=` | — | Recent runs, default 50, max 500. |
 | POST | `/v1/runs` | `{packet, tier?, ceiling?, mode?, attempts?}` | 202 `{run_id}`; runs in the background. |

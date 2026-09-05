@@ -218,6 +218,11 @@ pub struct ServerConfig {
     pub password_env: String,
     #[serde(default = "default_env_file")]
     pub env_file: Option<String>,
+    /// Who gets in without the password. `tailnet` (the default) trusts a peer on the tailnet or
+    /// on loopback, the way the bridges do, and asks everyone else for the password; `password`
+    /// asks everyone.
+    #[serde(default)]
+    pub auth: AuthMode,
 }
 
 impl Default for ServerConfig {
@@ -227,6 +232,43 @@ impl Default for ServerConfig {
             user: default_user(),
             password_env: default_password_env(),
             env_file: default_env_file(),
+            auth: AuthMode::default(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthMode {
+    #[default]
+    Tailnet,
+    Password,
+}
+
+impl AuthMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AuthMode::Tailnet => "tailnet",
+            AuthMode::Password => "password",
+        }
+    }
+}
+
+/// A peer that is already inside: loopback (which is also what `tailscale serve` hands over) or
+/// a Tailscale address — the CGNAT range every tailnet node wears, or its IPv6 prefix.
+pub fn is_trusted_peer(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback() || (v4.octets()[0] == 100 && (64..128).contains(&v4.octets()[1])),
+        IpAddr::V6(v6) => {
+            if v6.is_loopback() {
+                return true;
+            }
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_trusted_peer(IpAddr::V4(v4));
+            }
+            let segments = v6.segments();
+            segments[0] == 0xfd7a && segments[1] == 0x115c && segments[2] == 0xa1e0
         }
     }
 }
@@ -790,6 +832,27 @@ server:
         assert!(plan.verify.is_none());
         assert_eq!(plan.mode, Mode::Normal);
         assert!(plan.ask_before.is_none());
+    }
+
+    #[test]
+    fn a_tailnet_or_loopback_peer_is_trusted_and_nothing_else_is() {
+        use std::net::IpAddr;
+        let trusted = ["127.0.0.1", "::1", "100.64.0.1", "100.91.211.44", "100.127.255.254", "::ffff:100.100.1.1", "fd7a:115c:a1e0::1"];
+        for ip in trusted {
+            assert!(is_trusted_peer(ip.parse::<IpAddr>().unwrap()), "{ip} should be trusted");
+        }
+        let strangers = ["100.63.255.255", "100.128.0.1", "192.168.1.10", "10.0.0.1", "8.8.8.8", "fd7b::1", "::ffff:192.168.1.1"];
+        for ip in strangers {
+            assert!(!is_trusted_peer(ip.parse::<IpAddr>().unwrap()), "{ip} should not be trusted");
+        }
+    }
+
+    #[test]
+    fn the_auth_mode_defaults_to_tailnet_and_reads_password() {
+        let cfg = cfg_from(THREE_TIERS);
+        assert_eq!(cfg.server.auth, AuthMode::Tailnet);
+        let yaml = format!("{THREE_TIERS}server:\n  auth: password\n");
+        assert_eq!(cfg_from(&yaml).server.auth, AuthMode::Password);
     }
 
     #[test]
